@@ -4,9 +4,37 @@ import requests
 import simplejson as json
 from confluent_kafka import SerializingProducer
 
+# Modified for Indian voters and parties
 BASE_URL = 'https://randomuser.me/api/?nat=in'
 PARTIES = ["Bhartiya Janta Party", "Aam Aadmi Party", "Congress Party"]
 random.seed(42)
+
+def create_database():
+    """Create the voting database if it doesn't exist"""
+    try:
+        # Connect to default postgres database first
+        conn = psycopg2.connect(
+            "host=localhost dbname=postgres user=postgres password=postgres"
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        # Check if database exists
+        cur.execute("SELECT 1 FROM pg_catalog.pg_database WHERE datname = 'voting'")
+        exists = cur.fetchone()
+        
+        if not exists:
+            cur.execute('CREATE DATABASE voting')
+            print("Database 'voting' created successfully")
+        else:
+            print("Database 'voting' already exists")
+            
+        cur.close()
+        conn.close()
+        
+    except Exception as e:
+        print(f"Error creating database: {e}")
+        raise e
 
 def generate_voter_data():
     response = requests.get(BASE_URL)
@@ -17,13 +45,13 @@ def generate_voter_data():
             "voter_name": f"{user_data['name']['first']} {user_data['name']['last']}",
             "date_of_birth": user_data['dob']['date'],
             "gender": user_data['gender'],
-            "nationality": user_data['nat'],
+            "nationality": "Indian",  # Override nationality
             "registration_number": user_data['login']['username'],
             "address": {
                 "street": f"{user_data['location']['street']['number']} {user_data['location']['street']['name']}",
                 "city": user_data['location']['city'],
                 "state": user_data['location']['state'],
-                "country": user_data['location']['country'],
+                "country": "India",  # Override country
                 "postcode": user_data['location']['postcode']
             },
             "email": user_data['email'],
@@ -39,12 +67,20 @@ def generate_candidate_data(candidate_number, total_parties):
     response = requests.get(BASE_URL + '&gender=' + ('female' if candidate_number % 2 == 1 else 'male'))
     if response.status_code == 200:
         user_data = response.json()['results'][0]
+        
+        # Indian-specific campaign platforms
+        campaign_platforms = [
+            "Focusing on digital India and economic growth.",
+            "Fighting corruption and improving public services.",
+            "Promoting inclusive development and social justice."
+        ]
+        
         return {
             "candidate_id": user_data['login']['uuid'],
             "candidate_name": f"{user_data['name']['first']} {user_data['name']['last']}",
             "party_affiliation": PARTIES[candidate_number % total_parties],
-            "biography": "A brief bio of the candidate.",
-            "campaign_platform": "Key campaign promises or platform.",
+            "biography": f"A dedicated public servant from {user_data['location']['state']}, committed to India's progress.",
+            "campaign_platform": campaign_platforms[candidate_number % total_parties],
             "photo_url": user_data['picture']['large']
         }
     else:
@@ -56,12 +92,9 @@ def delivery_report(err, msg):
     else:
         print(f'Message delivered to {msg.topic()} [{msg.partition()}]')
 
-def create_database(conn, cur):
-    cur.execute("SELECT 1 FROM pg_database WHERE datname='voting'")
-    exists = cur.fetchone()
-    if not exists:
-        cur.execute("CREATE DATABASE voting")
-        conn.commit()
+# Kafka Topics
+voters_topic = 'voters_topic'
+candidates_topic = 'candidates_topic'
 
 def create_tables(conn, cur):
     cur.execute("""
@@ -94,6 +127,7 @@ def create_tables(conn, cur):
             registered_age INTEGER
         )
     """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS votes (
             voter_id VARCHAR(255) UNIQUE,
@@ -103,76 +137,65 @@ def create_tables(conn, cur):
             PRIMARY KEY (voter_id, candidate_id)
         )
     """)
+
     conn.commit()
 
 def insert_voters(conn, cur, voter):
     cur.execute("""
-                INSERT INTO voters (voter_id, voter_name, date_of_birth, gender, nationality, registration_number, 
-                address_street, address_city, address_state, address_country, address_postcode, email, 
-                phone_number, cell_number, picture, registered_age)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (voter["voter_id"], voter['voter_name'], voter['date_of_birth'], voter['gender'],
-                 voter['nationality'], voter['registration_number'], voter['address']['street'],
-                 voter['address']['city'], voter['address']['state'], voter['address']['country'],
-                 voter['address']['postcode'], voter['email'], voter['phone_number'],
-                 voter['cell_number'], voter['picture'], voter['registered_age'])
-                )
+        INSERT INTO voters (voter_id, voter_name, date_of_birth, gender, nationality, 
+        registration_number, address_street, address_city, address_state, address_country, 
+        address_postcode, email, phone_number, cell_number, picture, registered_age)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (voter["voter_id"], voter['voter_name'], voter['date_of_birth'], voter['gender'],
+         voter['nationality'], voter['registration_number'], voter['address']['street'],
+         voter['address']['city'], voter['address']['state'], voter['address']['country'],
+         voter['address']['postcode'], voter['email'], voter['phone_number'],
+         voter['cell_number'], voter['picture'], voter['registered_age'])
+    )
     conn.commit()
 
-def create_database_and_tables():
-    # Connect to the default 'postgres' database to create 'voting' if it doesn't exist
-    conn = psycopg2.connect("host=localhost dbname=postgres user=postgres password=postgres")
-    conn.autocommit = True
+if __name__ == "__main__":
+    # Create database if it doesn't exist
+    create_database()
+    
+    # Connect to the voting database
+    conn = psycopg2.connect("host=localhost dbname=voting user=postgres password=postgres")
     cur = conn.cursor()
 
-    # Create the 'voting' database if it doesn't exist
-    create_database(conn, cur)
-
-    # Connect to the 'voting' database
-    conn_voting = psycopg2.connect("host=localhost dbname=voting user=postgres password=postgres")
-    cur_voting = conn_voting.cursor()
-
-    # Create the necessary tables in the 'voting' database
-    create_tables(conn_voting, cur_voting)
-
-    return conn_voting, cur_voting
-
-if __name__ == "__main__":
-    # Set up the database and tables
-    conn, cur = create_database_and_tables()
-
-    # Set up Kafka producer
     producer = SerializingProducer({'bootstrap.servers': 'localhost:9092'})
+    create_tables(conn, cur)
 
-    # Check if there are any candidates in the database
+    # Get candidates from db
     cur.execute("SELECT * FROM candidates")
     candidates = cur.fetchall()
+    print(candidates)
 
     if len(candidates) == 0:
-        # Insert 3 candidates if none exist
         for i in range(3):
             candidate = generate_candidate_data(i, 3)
+            print(candidate)
             cur.execute("""
-                        INSERT INTO candidates (candidate_id, candidate_name, party_affiliation, biography, campaign_platform, photo_url)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (
-                candidate['candidate_id'], candidate['candidate_name'], candidate['party_affiliation'],
-                candidate['biography'], candidate['campaign_platform'], candidate['photo_url']))
+                INSERT INTO candidates (candidate_id, candidate_name, party_affiliation, 
+                biography, campaign_platform, photo_url)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """, 
+                (candidate['candidate_id'], candidate['candidate_name'], 
+                 candidate['party_affiliation'], candidate['biography'],
+                 candidate['campaign_platform'], candidate['photo_url'])
+            )
             conn.commit()
 
-    # Generate and insert 1000 voters
     for i in range(1000):
         voter_data = generate_voter_data()
         insert_voters(conn, cur, voter_data)
 
-        # Produce voter data to Kafka
         producer.produce(
-            'voters_topic',
+            voters_topic,
             key=voter_data["voter_id"],
             value=json.dumps(voter_data),
             on_delivery=delivery_report
         )
 
-        print(f'Produced voter {i}, data: {voter_data}')
+        print('Produced voter {}, data: {}'.format(i, voter_data))
         producer.flush()

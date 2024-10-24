@@ -3,3 +3,8 @@ confluent_kafka
 simplejson
 requests
 pyspark
+streamlit
+streamlit-autorefresh
+kafka
+pandas 
+matplotlib
