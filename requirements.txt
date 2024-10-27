@@ -1,10 +1,41 @@
+# Database
 psycopg2-binary
-confluent_kafka 
+
+# Kafka and Serialization
+# confluent-kafka
+# kafka-python
+# apache-flink
+
+
+
+# # Apache Flink Python API
+# apache-flink-libraries
+# apache-flink-connector-kafka
+# apache-flink-connector-jdbc
+
+# Data Processing and Serialization
+pandas
+numpy
 simplejson
+
+# HTTP Requests
 requests
-pyspark
+
+# Flink SQL and Table API Dependencies
+apache-flink-statefun
+
+# DateTime handling
+python-dateutil
+pytz
+
+# Optional: Development and Testing
+pytest
+black
+flake8
+
+# Optional: Logging and Monitoring
+python-json-logger
+
+# Dashboarding
 streamlit
 streamlit-autorefresh
-kafka
-pandas 
-matplotlib
