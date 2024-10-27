@@ -35,7 +35,7 @@ pyarrow==14.0.1
 pydeck==0.8.1b0
 Pygments==2.17.2
 pyparsing==3.1.1
-pyspark==3.5.0
+
 python-dateutil==2.8.2
 pytz==2023.3.post1
 referencing==0.31.1
@@ -57,3 +57,11 @@ tzlocal==5.2
 urllib3==2.1.0
 validators==0.22.0
 zipp==3.17.0
+
+apache-flink==1.18.1
+apache-flink-clients==1.18.1
+python-confluent-kafka==2.3.0
+psycopg2-binary==2.9.9
+requests==2.31.0
+simplejson==3.19.2
+apache-flink-libraries==1.18.1
