@@ -1,0 +1,162 @@
+How voting.py Works Together with the Initial Code
+First Code (Voter and Candidate Data Generation):
+
+The first code generates and publishes voter data to the voters_topic in Kafka. 
+It also inserts candidates into the PostgreSQL candidates table, which voting.py accesses to match voters with candidates.
+voting.py (Voter-Candidate Mapping):
+
+voting.py listens to the voters_topic for voter data and assigns each voter to a randomly chosen candidate from the database.
+Each vote is stored in the votes table in PostgreSQL to keep a permanent record.
+Additionally, voting.py publishes the processed vote to a new Kafka topic, votes_topic, 
+where other consumers can access the voting results for further processing, such as analytics or real-time monitoring.
+
+
+
+Step-by-Step Explanation of main
+Setting Up Kafka Consumer:
+
+python
+Copy code
+consumer = Consumer({
+    'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS,
+    'group.id': CONSUMER_GROUP_ID,
+    'auto.offset.reset': 'earliest'
+})
+Here, the code initializes a Kafka Consumer, which is used to read messages (in this case, voter data) from a Kafka topic.
+It connects to Kafka using the KAFKA_BOOTSTRAP_SERVERS server address, allowing it to communicate with Kafka.
+group.id sets the consumer group ID, which groups this consumer with others for load balancing if needed. For now, it’s used to manage a single consumer.
+auto.offset.reset is set to 'earliest', which means if this consumer hasn’t read from the topic before, it will start reading from the beginning of the topic.
+Kafka Consumer: Voter information is retrieved through a Kafka consumer that listens to the voters_topic:
+
+Dynamic Data Flow: Voter data is dynamic and comes from real-time events as voters cast their votes. This data needs to be processed as
+it arrives rather than being statically queried like candidates .
+Real-Time Processing: By using a Kafka consumer, your application can react immediately to new voter data as it is produced. 
+This is crucial in a voting system where actions (votes) need to be captured and processed in real time.
+Setting Up Kafka Producer:
+
+python
+Copy code
+producer = Producer({
+    'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS
+})
+The code creates a Kafka Producer that will be used to send messages (in this case, votes) to another Kafka topic (votes_topic).
+It connects to Kafka with the same server address, which allows it to publish messages.
+Connecting to PostgreSQL:
+
+python
+Copy code
+conn = psycopg2.connect("host=localhost dbname=voting user=postgres password=postgres")
+cur = conn.cursor()
+This connects to the PostgreSQL database where the voter, candidate, and voting information is stored.
+cur (cursor) allows the code to execute SQL commands on the database.
+Retrieving Candidates from the Database:
+
+python
+Copy code
+candidates = get_candidates(cur)
+if not candidates:
+    print("No candidates found in database!")
+    return
+The code calls get_candidates(cur), a helper function that queries the database to get a list of candidate IDs.
+This list is important because the code randomly assigns one of these candidates to each voter when a vote is processed.
+If there are no candidates in the database, it prints an error message and stops the program since there are no candidates to vote for.
+Subscribing to Kafka Topic (voters_topic):
+
+python
+Copy code
+consumer.subscribe(['voters_topic'])
+The consumer subscribes to voters_topic, which is the topic where voter information is published.
+This means the code is now set up to listen for new messages (voter data) coming in on this topic.
+Processing Voter Data:
+
+python
+Copy code
+while True:
+    msg = consumer.poll(1.0)
+    ...
+The while True loop runs continuously, keeping the consumer active to receive new voter messages as they are produced.
+msg = consumer.poll(1.0) checks the topic for new messages every second (1.0 seconds).
+If there’s no new message (msg is None), it loops again. If there is a message, it proceeds to process it.
+Handling Errors in Messages:
+
+python
+Copy code
+if msg.error():
+    if msg.error().code() == KafkaError._PARTITION_EOF:
+        print('Reached end of partition')
+    else:
+        print(f'Error: {msg.error()}')
+    continue
+This part handles any errors in the messages received. For instance, if it has reached the end of the partition (Kafka’s way of storing messages in chunks), it prints a message and moves on.
+If there’s a different error, it prints that error and continues.
+Parsing Voter Data:
+
+python
+Copy code
+voter_data = json.loads(msg.value())
+voter_id = voter_data['voter_id']
+The code converts the incoming message (which is in JSON format) into a dictionary using json.loads.
+It then extracts the voter_id from the message. This ID uniquely identifies each voter.
+Simulating the Voting Process:
+
+python
+Copy code
+selected_candidate = random.choice(candidates)
+A candidate is randomly selected for the voter by picking a candidate ID from the candidates list.
+This simulated process assigns each voter to a candidate in a random way, as if the voter is casting a vote for that candidate.
+Creating the Vote Data:
+
+python
+Copy code
+vote_data = {
+    'voter_id': voter_id,
+    'candidate_id': selected_candidate,
+    'voting_time': datetime.now().isoformat(),
+    'vote': 1
+}
+This creates a dictionary, vote_data, that stores the voter ID, selected candidate ID, the current timestamp, and a vote value (set to 1 for a cast vote).
+This data structure represents a single vote entry.
+Inserting the Vote into PostgreSQL:
+
+python
+Copy code
+cur.execute("""
+    INSERT INTO votes (voter_id, candidate_id, voting_time, vote)
+    VALUES (%s, %s, %s, %s)
+    ON CONFLICT (voter_id) DO NOTHING
+""", (vote_data['voter_id'], vote_data['candidate_id'], 
+      vote_data['voting_time'], vote_data['vote']))
+conn.commit()
+This inserts the vote data into the votes table in PostgreSQL.
+ON CONFLICT (voter_id) DO NOTHING ensures that if the voter has already voted (identified by voter_id), the code won’t insert a duplicate entry for that voter.
+conn.commit() saves the changes to the database.
+Publishing Vote to Kafka:
+
+python
+Copy code
+producer.produce(
+    'votes_topic',
+    key=voter_id,
+    value=json.dumps(vote_data),
+    on_delivery=delivery_report
+)
+producer.flush()
+The code then publishes the vote data to the votes_topic in Kafka so that other applications can use it, like for real-time analytics or tracking.
+json.dumps(vote_data) converts the vote data into JSON format for transmission.
+key=voter_id sets the message key to voter_id, which helps Kafka store messages with similar keys in the same partition.
+on_delivery=delivery_report ensures that after publishing, the delivery report function will print a confirmation message.
+producer.flush() makes sure the message is actually sent and not held in a buffer.
+Cleanup on Exit:
+
+python
+Copy code
+except KeyboardInterrupt:
+    print("Shutting down...")
+finally:
+    consumer.close()
+    cur.close()
+    conn.close()
+If the program is interrupted (e.g., by pressing Ctrl+C), it catches the interruption and prints “Shutting down...”.
+Then, in the finally block, it closes the consumer, database cursor, and connection to clean up resources properly.
+Summary
+In simple terms, the main function is continuously listening to incoming voter data, assigning each voter to a candidate randomly, recording the vote in the database, and sending the vote information to another Kafka topic. This setup allows the code to process and track voting in real time while also making the data accessible for other parts of the application or analytics systems.

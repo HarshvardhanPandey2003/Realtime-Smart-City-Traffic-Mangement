@@ -15,9 +15,9 @@ def generate_voter_data():
         if response.status_code == 200:
             user_data = response.json()['results'][0]
             registered_age = user_data['registered']['age']
-            
-            # if registered_age >= 18:
-            return {
+
+            if registered_age >= 18:
+                return {
                     "voter_id": user_data['login']['uuid'],
                     "voter_name": f"{user_data['name']['first']} {user_data['name']['last']}",
                     "date_of_birth": user_data['dob']['date'],
@@ -43,7 +43,7 @@ def generate_voter_data():
 
 
 def generate_candidate_data(candidate_number, total_parties):
-    response = requests.get(BASE_URL + '&gender=' + ('female' if candidate_number % 2 == 1 else 'male'))
+    response = requests.get(BASE_URL + '&gender=' + ('female' if candidate_number % 3 == 1 else 'male'))
     if response.status_code == 200:
         user_data = response.json()['results'][0]
 
@@ -133,11 +133,11 @@ def insert_voters(conn, cur, voter):
 if __name__ == "__main__":
     conn = psycopg2.connect("host=localhost dbname=voting user=postgres password=postgres")
     cur = conn.cursor()
-
+    # SerializingProducer is used to configure and create a Kafka producer that can serialize data into JSON 
+    # format before sending it to Kafka topics.
     producer = SerializingProducer({'bootstrap.servers': 'localhost:9092', })
     create_tables(conn, cur)
 
-    # get candidates from db
     cur.execute("""
         SELECT * FROM candidates
     """)
