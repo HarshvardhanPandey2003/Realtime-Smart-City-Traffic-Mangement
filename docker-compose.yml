@@ -1,5 +1,6 @@
 volumes:
   postgres_data:  # Define the named volume
+  spark_data:    # Define a volume for Spark data
 
 services:
   zookeeper:
@@ -63,41 +64,39 @@ services:
       timeout: 5s
       retries: 5
 
-  jobmanager:
-    image: apache/flink:1.18.1
-    container_name: jobmanager
-    ports:
-      - "8081:8081"
-    command: jobmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-        state.backend: filesystem
-        state.checkpoints.dir: file:///flink-checkpoints
-        heartbeat.timeout: 180000
-    volumes:
-      - ./flink-checkpoints:/flink-checkpoints
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+  # spark-master:
+  #   image: apache/spark:3.3.0
+  #   container_name: spark-master
+  #   hostname: spark-master
+  #   ports:
+  #     - "8080:8080"
+  #     - "7077:7077"
+  #   environment:
+  #     SPARK_MASTER_UI_PORT: 8080
+  #     SPARK_MASTER_WEBUI_PORT: 8080
+  #     SPARK_MASTER_PORT: 7077
+  #     SPARK_MASTER_HOST: spark-master
+  #   volumes:
+  #     - spark_data:/opt/spark/data
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8080"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
 
-  taskmanager:
-    image: apache/flink:1.18.1
-    container_name: taskmanager
-    depends_on:
-      - jobmanager
-    command: taskmanager
-    environment:
-      - |
-        FLINK_PROPERTIES=
-        jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 2
-        state.backend: filesystem
-        state.checkpoints.dir: file:///flink-checkpoints
-        heartbeat.timeout: 180000
-    volumes:
-      - ./flink-checkpoints:/flink-checkpoints
-    scale: 1  # You can increase this number to add more taskmanagers
+  # spark-worker:
+  #   image: apache/spark:3.3.0
+  #   container_name: spark-worker
+  #   hostname: spark-worker
+  #   depends_on:
+  #     - spark-master
+  #   environment:
+  #     SPARK_MASTER_URL: "spark://spark-master:7077"
+  #     SPARK_WORKER_WEBUI_PORT: 8081
+  #   volumes:
+  #     - spark_data:/opt/spark/data
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8081"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3

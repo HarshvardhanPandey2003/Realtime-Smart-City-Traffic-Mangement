@@ -31,7 +31,7 @@ def load_reference_data():
     candidates = {row['candidate_id']: row for row in cur.fetchall()}
     
     # Load voters data
-    cur.execute("SELECT voter_id, voter_name, gender, address_state FROM voters")
+    cur.execute("SELECT voter_id, voter_name, gender, address_state, registered_age FROM voters")
     voters = {row['voter_id']: row for row in cur.fetchall()}
     
     cur.close()
@@ -46,6 +46,7 @@ def process_votes():
     party_votes = defaultdict(int)
     gender_party_votes = defaultdict(lambda: defaultdict(int))
     state_party_votes = defaultdict(lambda: defaultdict(int))
+    age_group_votes = defaultdict(int)
     
     while True:
         msg = consumer.poll(1.0)
@@ -61,11 +62,27 @@ def process_votes():
                 party = candidate['party_affiliation']
                 gender = voter['gender']
                 state = voter['address_state']
+                age = voter['registered_age']
+                
+                # Define age group
+                if age < 18:
+                    continue
+                elif age <= 25:
+                    age_group = "18-25"
+                elif age <= 35:
+                    age_group = "26-35"
+                elif age <= 45:
+                    age_group = "36-45"
+                elif age <= 60:
+                    age_group = "46-60"
+                else:
+                    age_group = "60+"
                 
                 # Update aggregations
                 party_votes[party] += 1
                 gender_party_votes[gender][party] += 1
                 state_party_votes[state][party] += 1
+                age_group_votes[age_group] += 1
                 
                 # Convert to DataFrames for visualization
                 party_df = pd.DataFrame([{'party': k, 'votes': v} for k, v in party_votes.items()])
@@ -79,8 +96,9 @@ def process_votes():
                     for state, party_votes in state_party_votes.items()
                     for party, votes in party_votes.items()
                 ])
+                age_group_df = pd.DataFrame([{'age_group': k, 'votes': v} for k, v in age_group_votes.items()])
                 
-                yield party_df, gender_df, state_df
+                yield party_df, gender_df, state_df, age_group_df
         except Exception as e:
             st.error(f"Error processing vote: {e}")
             continue
@@ -99,13 +117,16 @@ def create_dashboard():
         active_states = col3.empty()
     
     # Separate views in tabs for better organization
-    tab1, tab2, tab3 = st.tabs(["Party-wise Distribution", "Gender-wise Distribution", "State-wise Distribution"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Party-wise Distribution", "Gender-wise Distribution", "State-wise Distribution", "Age-wise Distribution"
+    ])
     
     party_chart = tab1.empty()
     gender_chart = tab2.empty()
     state_chart = tab3.empty()
+    age_chart = tab4.empty()
     
-    for party_df, gender_df, state_df in process_votes():
+    for party_df, gender_df, state_df, age_group_df in process_votes():
         # Update total votes metric
         total_votes.metric("Total Votes Cast", party_df['votes'].sum())
         
@@ -135,6 +156,13 @@ def create_dashboard():
                       barmode='stack', color_discrete_sequence=px.colors.qualitative.Dark2)
         fig3.update_layout(xaxis_title='State', yaxis_title='Votes')
         state_chart.plotly_chart(fig3, use_container_width=True)
+        
+        # Age-wise voting patterns (Tab 4)
+        fig4 = px.bar(age_group_df, x='age_group', y='votes', 
+                      title='Age-wise Voting Patterns',
+                      color='age_group', color_discrete_sequence=px.colors.qualitative.Pastel1)
+        fig4.update_layout(xaxis_title='Age Group', yaxis_title='Votes')
+        age_chart.plotly_chart(fig4, use_container_width=True)
         
         time.sleep(0.1)
 
