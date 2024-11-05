@@ -42,7 +42,7 @@ def main():
         print("No candidates found in database!")
         return
     
-    # Subscribe to voters topic
+    # Subscribe to voters topic to get all the voters data 
     consumer.subscribe(['voters_topic'])
     
     try:
@@ -85,7 +85,7 @@ def main():
                           vote_data['voting_time'], vote_data['vote']))
                     conn.commit()
                     
-                    # Produce vote to Kafka votes_topic
+                    # The Poducer Produces the vote to Kafka votes_topic
                     producer.produce(
                         'votes_topic',
                         key=voter_id,

@@ -1,6 +1,6 @@
 volumes:
-  postgres_data:  # Define the named volume
-  spark_data:    # Define a volume for Spark data
+  postgres_data:
+  spark_data:
 
 services:
   zookeeper:
@@ -64,39 +64,37 @@ services:
       timeout: 5s
       retries: 5
 
-  # spark-master:
-  #   image: apache/spark:3.3.0
-  #   container_name: spark-master
-  #   hostname: spark-master
-  #   ports:
-  #     - "8080:8080"
-  #     - "7077:7077"
-  #   environment:
-  #     SPARK_MASTER_UI_PORT: 8080
-  #     SPARK_MASTER_WEBUI_PORT: 8080
-  #     SPARK_MASTER_PORT: 7077
-  #     SPARK_MASTER_HOST: spark-master
-  #   volumes:
-  #     - spark_data:/opt/spark/data
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8080"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
+  spark-master:
+    image: bitnami/spark:latest  # Use Bitnami Spark image
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_PORT_NUMBER=7077
+      - SPARK_MASTER_WEBUI_PORT_NUMBER=8080
+    ports:
+      - "8080:8080"  # Spark Web UI
+      - "7077:7077"  # Spark master port
+    volumes:
+      - spark_data:/bitnami/spark/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # spark-worker:
-  #   image: apache/spark:3.3.0
-  #   container_name: spark-worker
-  #   hostname: spark-worker
-  #   depends_on:
-  #     - spark-master
-  #   environment:
-  #     SPARK_MASTER_URL: "spark://spark-master:7077"
-  #     SPARK_WORKER_WEBUI_PORT: 8081
-  #   volumes:
-  #     - spark_data:/opt/spark/data
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8081"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
+  spark-worker:
+    image: bitnami/spark:latest  # Use Bitnami Spark image
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_WEBUI_PORT_NUMBER=8081
+    depends_on:
+      - spark-master
+    volumes:
+      - spark_data:/bitnami/spark/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

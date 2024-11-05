@@ -57,11 +57,7 @@ tzlocal==5.2
 urllib3==2.1.0
 validators==0.22.0
 zipp==3.17.0
-
-apache-flink==1.18.1
-apache-flink-clients==1.18.1
 python-confluent-kafka==2.3.0
 psycopg2-binary==2.9.9
 requests==2.31.0
 simplejson==3.19.2
-apache-flink-libraries==1.18.1
