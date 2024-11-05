@@ -68,29 +68,33 @@ def generate_voter_data_batch(batch_size: int) -> List[Dict]:
     response = requests.get(f"{BASE_URL}?nat=in&results={batch_size}")
     if response.status_code == 200:
         users_data = response.json()['results']
-        return [
-            {
-                "voter_id": user['login']['uuid'],
-                "voter_name": f"{user['name']['first']} {user['name']['last']}",
-                "date_of_birth": user['dob']['date'],
-                "gender": user['gender'],
-                "nationality": user['nat'],
-                "registration_number": user['login']['username'],
-                "address": {
-                    "street": f"{user['location']['street']['number']} {user['location']['street']['name']}",
-                    "city": user['location']['city'],
-                    "state": user['location']['state'],
-                    "country": user['location']['country'],
-                    "postcode": user['location']['postcode']
-                },
-                "email": user['email'],
-                "phone_number": user['phone'],
-                "cell_number": user['cell'],
-                "picture": user['picture']['large'],
-                "registered_age": user['registered']['age']
-            }
-            for user in users_data
-        ]
+        # Filter and transform users data
+        valid_voters = []
+        for user in users_data:
+            registered_age = user['registered']['age']
+            if registered_age >= 18:
+                voter = {
+                    "voter_id": user['login']['uuid'],
+                    "voter_name": f"{user['name']['first']} {user['name']['last']}",
+                    "date_of_birth": user['dob']['date'],
+                    "gender": user['gender'],
+                    "nationality": user['nat'],
+                    "registration_number": user['login']['username'],
+                    "address": {
+                        "street": f"{user['location']['street']['number']} {user['location']['street']['name']}",
+                        "city": user['location']['city'],
+                        "state": user['location']['state'],
+                        "country": user['location']['country'],
+                        "postcode": user['location']['postcode']
+                    },
+                    "email": user['email'],
+                    "phone_number": user['phone'],
+                    "cell_number": user['cell'],
+                    "picture": user['picture']['large'],
+                    "registered_age": registered_age
+                }
+                valid_voters.append(voter)
+        return valid_voters
     return []
 
 def generate_candidate_data_batch(num_candidates: int) -> List[Dict]:
@@ -152,10 +156,14 @@ if __name__ == "__main__":
     # Handle candidates
     cur.execute("SELECT * FROM candidates")
     candidates = cur.fetchall()
+    print("\nExisting Candidates:")
+    print(candidates)
 
     if len(candidates) == 0:
+        print("\nGenerating new candidates...")
         candidate_batch = generate_candidate_data_batch(3)
         for candidate in candidate_batch:
+            print("\nCandidate Data:", json.dumps(candidate, indent=2))
             cur.execute("""
                 INSERT INTO candidates (
                     candidate_id, candidate_name, party_affiliation, 
@@ -175,6 +183,9 @@ if __name__ == "__main__":
     # Handle voters in batches
     total_voters = 1000
     num_batches = math.ceil(total_voters / BATCH_SIZE)
+    voter_count = 0
+    
+    print(f"\nGenerating {total_voters} voters in {num_batches} batches...")
     
     for batch in range(num_batches):
         batch_size = min(BATCH_SIZE, total_voters - (batch * BATCH_SIZE))
@@ -183,7 +194,7 @@ if __name__ == "__main__":
         # Insert voters into database
         batch_insert_voters(conn, cur, voter_batch)
         
-        # Produce Kafka messages
+        # Produce Kafka messages and display voter data
         for voter in voter_batch:
             producer.produce(
                 'voters_topic',
@@ -191,8 +202,19 @@ if __name__ == "__main__":
                 value=json.dumps(voter),
                 on_delivery=delivery_report
             )
+            print(f'\nProduced voter {voter_count + 1}, data:', json.dumps(voter, indent=2))
+            voter_count += 1
         
-        print(f'Produced batch {batch + 1}/{num_batches}, {len(voter_batch)} voters')
+        print(f'\nCompleted batch {batch + 1}/{num_batches}, processed {len(voter_batch)} voters')
         producer.flush()
+
+    print("\nFinal Database State:")
+    print("\nCandidates:")
+    cur.execute("SELECT * FROM candidates")
+    print(json.dumps(cur.fetchall(), indent=2))
+    
+    print("\nTotal Voters:", voter_count)
+    cur.execute("SELECT COUNT(*) FROM voters")
+    print("Voters in database:", cur.fetchone()[0])
 
     conn.close()
